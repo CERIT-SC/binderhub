@@ -1,0 +1,218 @@
+config:
+  BinderHub:
+    hub_url: http://<proxy-EXTERNAL-IP>
+    use_registry: true
+    image_prefix: <name>/<image-prefix>
+    push_secret: dockercred
+extraConfig:
+  zz-swap-kaniko-for-docker: |
+    from binderhub.build import KubernetesBuildExecutor, ProgressEvent
+    from binderhub.utils import KUBE_REQUEST_TIMEOUT
+    from kubernetes import client, watch
+    from tornado.log import app_log
+
+    class KanikoBuilder(KubernetesBuildExecutor):
+
+      def get_cmd(self):
+
+          """Get the cmd to run to build the image"""
+          cmd = self.get_r2d_cmd_options()
+
+          # repo_url comes at the end, since otherwise our arguments
+          # might be mistook for commands to run.
+          # see https://github.com/jupyter/repo2docker/pull/128
+          # cmd.append(self.repo_url)
+
+          print('repo building command args are: %s' % ' '.join(cmd), flush = True)
+
+          return cmd
+
+      def get_r2d_cmd_options(self):
+
+          if "gitlab" in self.repo_url:
+            dockerfile_url = self.repo_url + '/-/raw/thesis/Dockerfile'
+          elif "github" in self.repo_url:
+            #dockerfile_url = "https://raw.githubusercontent.com" + url.split('github.com')[-1] + '/master/Dockerfile'
+            dockerfile_url = "https://raw.githubusercontent.com/VladimirVisnovsky/kaniko_test/master/Dockerfile"
+          else:
+            raise NotImplementedError("Only Gitlab.com, custom Gitlabs, or Github repositories with Dockerfiles in the repository's root directory are implemented")
+
+          r2d_options = [
+            "--use-new-run",
+            "--snapshotMode=redo",
+            "--dockerfile",
+            dockerfile_url,
+            "--destination",
+            self.image_name
+          ]
+
+          return r2d_options
+
+      def submit(self):
+        """
+        Submit a build pod to create the image for the repository.
+        Progress of the build can be monitored by listening for items in
+        the Queue passed to the constructor as `q`.
+        """
+        self.name = 'kaniko-' + self.name[7:]
+        self.build_image = 'gcr.io/kaniko-project/executor:debug'
+
+        volume_mounts = []
+        volumes = []
+
+        if True: #self.push_secret:
+            volume_mounts.append(
+                client.V1VolumeMount(mount_path="/kaniko/.docker", name="kaniko-secret")
+            )
+            volumes.append(
+                client.V1Volume(
+                    name="kaniko-secret",
+                    secret=client.V1SecretVolumeSource(secret_name=self.push_secret, items=[client.V1KeyToPath(key='.dockerconfigjson',path='config.json')]),
+                )
+            )
+
+        env = []
+        if self.git_credentials:
+            env.append(
+                client.V1EnvVar(name="GIT_CREDENTIAL_ENV", value=self.git_credentials)
+            )
+
+        self.pod = client.V1Pod(
+            metadata=client.V1ObjectMeta(
+                name=self.name,
+                labels={
+                    "name": self.name,
+                    "component": self._component_label,
+                },
+                annotations={
+                    "binder-repo": self.repo_url,
+                },
+            ),
+            spec=client.V1PodSpec(
+                containers=[
+                    client.V1Container(
+                        image=self.build_image,
+                        name="builder",
+                        args=self.get_cmd(),
+                        volume_mounts=volume_mounts,
+                        resources=client.V1ResourceRequirements(
+                            limits={"memory": self.memory_limit},
+                            requests={"memory": self.memory_request},
+                        ),
+                        env=env,
+                    )
+                ],
+                tolerations=[
+                    client.V1Toleration(
+                        key="hub.jupyter.org/dedicated",
+                        operator="Equal",
+                        value="user",
+                        effect="NoSchedule",
+                    ),
+                    # GKE currently does not permit creating taints on a node pool
+                    # with a `/` in the key field
+                    client.V1Toleration(
+                        key="hub.jupyter.org_dedicated",
+                        operator="Equal",
+                        value="user",
+                        effect="NoSchedule",
+                    ),
+                ],
+                node_selector=self.node_selector,
+                volumes=volumes,
+                restart_policy="Never",
+                affinity=self.get_affinity(),
+            ),
+        )
+
+        try:
+            _ = self.api.create_namespaced_pod(
+                self.namespace,
+                self.pod,
+                _request_timeout=KUBE_REQUEST_TIMEOUT,
+            )
+        except client.rest.ApiException as e:
+            if e.status == 409:
+                # Someone else created it!
+                app_log.info("Build %s already running", self.name)
+                pass
+            else:
+                raise
+        else:
+            app_log.info("Started build %s", self.name)
+
+        app_log.info("Watching build pod %s", self.name)
+        while not self.stop_event.is_set():
+            w = watch.Watch()
+            try:
+                for f in w.stream(
+                    self.api.list_namespaced_pod,
+                    self.namespace,
+                    label_selector=f"name={self.name}",
+                    timeout_seconds=30,
+                    _request_timeout=KUBE_REQUEST_TIMEOUT,
+                ):
+                    try:
+                      print(self.api.read_namespaced_pod_log(name=self.name, namespace=self.namespace),flush=True)
+                    except:
+                      pass
+                    if f["type"] == "DELETED":
+                        # Assume this is a successful completion
+                        self.progress(
+                            ProgressEvent.Kind.BUILD_STATUS_CHANGE,
+                            ProgressEvent.BuildStatus.BUILT,
+                        )
+                        return
+                    self.pod = f["object"]
+                    if not self.stop_event.is_set():
+                        # Account for all the phases kubernetes pods can be in
+                        # Pending, Running, Succeeded, Failed, Unknown
+                        # https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
+                        phase = self.pod.status.phase
+                        if phase == "Pending":
+                            self.progress(
+                                ProgressEvent.Kind.BUILD_STATUS_CHANGE,
+                                ProgressEvent.BuildStatus.PENDING,
+                            )
+                        elif phase == "Running":
+                            self.progress(
+                                ProgressEvent.Kind.BUILD_STATUS_CHANGE,
+                                ProgressEvent.BuildStatus.RUNNING,
+                            )
+                        elif phase == "Succeeded":
+                            # Do nothing! We will clean this up, and send a 'Completed' progress event
+                            # when the pod has been deleted
+                            pass
+                        elif phase == "Failed":
+                            self.progress(
+                                ProgressEvent.Kind.BUILD_STATUS_CHANGE,
+                                ProgressEvent.BuildStatus.FAILED,
+                            )
+                        elif phase == "Unknown":
+                            self.progress(
+                                ProgressEvent.Kind.BUILD_STATUS_CHANGE,
+                                ProgressEvent.BuildStatus.UNKNOWN,
+                            )
+                        else:
+                            # This shouldn't happen, unless k8s introduces new Phase types
+                            warnings.warn(
+                                f"Found unknown phase {phase} when building {self.name}"
+                            )
+
+                    if self.pod.status.phase == "Succeeded":
+                        self.cleanup()
+                    elif self.pod.status.phase == "Failed":
+                        self.cleanup()
+            except Exception:
+                app_log.exception("Error in watch stream for %s", self.name)
+                raise
+            finally:
+                w.stop()
+            if self.stop_event.is_set():
+                app_log.info("Stopping watch of %s", self.name)
+                return
+
+    if hasattr(c, 'BinderHub'):
+      c.BinderHub.build_class = KanikoBuilder
+    else:
+      raise NameError("Kaniko build class cannot find Binderhub configuration")
