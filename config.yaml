@@ -2,7 +2,7 @@ config:
   BinderHub:
     hub_url: http://<proxy-EXTERNAL-IP>
     use_registry: true
-    image_prefix: <name>/<image-prefix>
+    image_prefix: <name>/<image-prefix>-
     push_secret: dockercred
 extraConfig:
   zz-swap-kaniko-for-docker: |
