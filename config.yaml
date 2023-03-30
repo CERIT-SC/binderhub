@@ -30,12 +30,12 @@ extraConfig:
       def get_r2d_cmd_options(self):
 
           if "gitlab" in self.repo_url:
-            dockerfile_url = self.repo_url + '/-/raw/thesis/Dockerfile'
+            dockerfile_url = self.repo_url + '/-/raw/master/Dockerfile'
           elif "github" in self.repo_url:
-            #dockerfile_url = "https://raw.githubusercontent.com" + url.split('github.com')[-1] + '/master/Dockerfile'
-            dockerfile_url = "https://raw.githubusercontent.com/VladimirVisnovsky/kaniko_test/master/Dockerfile"
+            dockerfile_url = "https://raw.githubusercontent.com" + self.repo_url.split("github.com")[1] + "/master/Dockerfile"
           else:
             raise NotImplementedError("Only Gitlab.com, custom Gitlabs, or Github repositories with Dockerfiles in the repository's root directory are implemented")
+
 
           r2d_options = [
             "--use-new-run",
