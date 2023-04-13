@@ -769,8 +769,6 @@ class Repo2Docker(Application):
                 else:
                     picked_buildpack = self.default_buildpack()
 
-                print(f'used buildpack ->>>>> {picked_buildpack}')
-
                 picked_buildpack.appendix = self.appendix
                 # Add metadata labels
                 picked_buildpack.labels["repo2docker.version"] = self.version
@@ -788,19 +786,17 @@ class Repo2Docker(Application):
                     build_args["REPO_DIR"] = self.target_repo_dir
                 build_args.update(self.extra_build_args)
 
-                print(f'build_args ----------->>>>>> {build_args}')
                 if self.dry_run:
-                    print('entering dry_run')
                     print(picked_buildpack.render(build_args))
                 else:
                     self.log.debug(
                         picked_buildpack.render(build_args),
                         extra=dict(phase=R2dState.BUILDING),
                     )
-                    if self.user_id == 0:
-                        raise ValueError(
-                            "Root as the primary user in the image is not permitted."
-                        )
+                    #if self.user_id == 0:
+                    #    raise ValueError(
+                    #        "Root as the primary user in the image is not permitted."
+                    #    )
 
                     self.log.info(
                         "Using %s builder\n",
@@ -816,26 +812,31 @@ class Repo2Docker(Application):
                         self.cache_from,
                         self.extra_build_kwargs,
                     ):
-                        if docker_client.string_output:
-                            self.log.info(l, extra=dict(phase=R2dState.BUILDING))
-                        # else this is Docker output
-                        elif "stream" in l:
-                            self.log.info(
-                                l, extra=dict(phase=R2dState.BUILDING)
-                            )
-                        elif "error" in l:
-                            self.log.info(l, extra=dict(phase=R2dState.FAILED))
-                            raise BuildError(l)
-                        elif "status" in l:
-                            self.log.info(
-                                "Fetching base image...\r",
-                                extra=dict(phase=R2dState.BUILDING),
-                            )
-                        else:
-                            self.log.info(
-                                json.dumps(l), extra=dict(phase=R2dState.BUILDING)
-                            )
 
+
+                        _l_dict = {"_stream" : l}
+                        self.log.info(_l_dict, extra=dict(phase=R2dState.BUILDING))
+                        continue
+
+                        if docker_client.string_output:                                  
+                            self.log.info(_l_dict, extra=dict(phase=R2dState.BUILDING))       
+                        # else this is Docker output                                     
+                        elif "stream" in l:
+                            self.log.info(                                              
+                                l, extra=dict(phase=R2dState.BUILDING)        
+                            )                                                           
+                        elif "error" in l:                                               
+                            self.log.info(l, extra=dict(phase=R2dState.FAILED))
+                            raise BuildError(_l_dict)                                    
+                        elif "status" in l:                                        
+                            self.log.info(                                        
+                                "Fetching base image...\r",                       
+                                extra=dict(phase=R2dState.BUILDING),              
+                            )                                                     
+                        else:                                                      
+                            self.log.info(                                        
+                                json.dumps(_l_dict), extra=dict(phase=R2dState.BUILDING)
+                            )                                  
         finally:
             # Cleanup checkout if necessary
             if self.cleanup_checkout:

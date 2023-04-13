@@ -578,8 +578,11 @@ class BuildPack:
             dest_path, src_path = self.generate_build_context_filename(src)
             tar.add(src_path, dest_path, filter=_filter_tar)
 
+        import os
+
         for fname in ("repo2docker-entrypoint", "python3-login"):
             tar.add(os.path.join(HERE, fname), fname, filter=_filter_tar)
+
 
         tar.add(".", "src/", filter=_filter_tar)
 

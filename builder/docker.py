@@ -4,6 +4,7 @@ Docker container engine for repo2docker
 
 from kaniko import Kaniko, KanikoSnapshotMode
 import docker
+import tarfile
 from traitlets import Dict
 from iso8601 import parse_date
 
@@ -94,22 +95,25 @@ class DockerEngine(ContainerEngine):
         labels=None,
         **kwargs,
     ):
-        #self._apiclient.no_push = True
 
-        import tarfile
-        tfile = tarfile.open(fileobj=fileobj, mode='r')
-        tfile.extractall(path='/workspace', numeric_owner=True)
-        tfile.close()
 
-        print(f'build args ==========+> {buildargs}')
+        try:
+            with tarfile.open(fileobj=fileobj, mode='r') as tfile:
+                tfile.extractall(path='/workspace', numeric_owner=True)
+            dockerfile = '/workspace/Dockerfile'
+            print('Building generic environment...')
+        except ValueError:
+            dockerfile = path + '/Dockerfile'
+            print('Building from found Dockerfile')
+
+        # set build options
+        self._apiclient.snapshot_mode = KanikoSnapshotMode.redo
+        self._apiclient.use_new_run = True
 
         return self._apiclient.build(
             build_args=buildargs,
 
-            docker_registry_uri='https://index.docker.io/v1/',
-            registry_username='spectraes',
-            registry_password='',
-            destination='docker.io/spectraes/testkanikoimage:test',
+            destination=tag,
 
             cache_from=cache_from,
             container_limits=container_limits,
@@ -118,7 +122,7 @@ class DockerEngine(ContainerEngine):
             tag=tag,
             custom_context=custom_context,
             decode=True,
-            dockerfile='/workspace/Dockerfile',
+            dockerfile=dockerfile,
             fileobj=fileobj,
             path=path,
             labels=labels,

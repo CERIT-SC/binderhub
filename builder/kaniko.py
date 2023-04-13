@@ -9,6 +9,7 @@ from base64 import b64encode
 class KanikoSnapshotMode(Enum):
     full = 'full'
     time = 'time'
+    redo = 'redo'
 
 
 class KanikoVerbosity(Enum):
@@ -220,6 +221,11 @@ class Kaniko(object):
     """
     kaniko_path: str = '/kaniko'
 
+    """
+    Use new run according to Kaniko library
+    """
+    use_new_run: bool = False
+
     def __init__(self):
         self._configure_attribute_names = tuple([
             key
@@ -237,15 +243,16 @@ class Kaniko(object):
         :raise KanikoBuildException: if kaniko failed
         """
         self.configure(**kwargs)
-        self._write_config()
-
-        print(f'SHELL_COMMAND ==========+> {self.shell_command}')
+        #self._write_config()
 
         res = subprocess.Popen(self.shell_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        res.wait()
+        for line in iter(res.stdout.readline, b''): # b'\n'-separated lines
+            # [:-1] to strip the string of extra newline
+            yield line.decode()[:-1]
+        exit_code = res.wait()
 
-        exit_code = res.returncode
         body = self._parse_logs(res.stdout.read())
+        res.stdout.close()
         if exit_code != 0:
             raise KanikoBuildException(exit_code=exit_code, body=body)
 
@@ -273,7 +280,6 @@ class Kaniko(object):
         for handler in self._shell_part_handlers:
             getattr(self, handler)(command)
 
-        print(f'WHOLE COMMAND =======+++++> {command}')
         return command
 
     def _is_callable(self, attribute_name: str):
@@ -307,7 +313,6 @@ class Kaniko(object):
         for key,val in self.build_args.items():
             command.append(f'--build-arg')
             command.append(f'{key}={val}')
-        print(f'COMMAND ===========+> {str(command)}')
 
     def _get_shell_part_context(self, command: List[str]):
         if self.context:
@@ -404,3 +409,7 @@ class Kaniko(object):
     def _get_shell_part_verbosity(self, command: List[str]):
         if self.verbosity:
             command.append(f'--verbosity={self.verbosity.value}')
+
+    def _get_shell_part_single_snapshot(self, command: List[str]):
+        if self.use_new_run:
+            command.append('--use-new-run')
