@@ -248,10 +248,12 @@ class Kaniko(object):
         res = subprocess.Popen(self.shell_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in iter(res.stdout.readline, b''): # b'\n'-separated lines
             # [:-1] to strip the string of extra newline
-            yield line.decode()[:-1]
+            _l_dict = {'INFO':line.decode()[:-1]}
+            yield _l_dict
         exit_code = res.wait()
 
         body = self._parse_logs(res.stdout.read())
+        body = {'stream':body}
         res.stdout.close()
         if exit_code != 0:
             raise KanikoBuildException(exit_code=exit_code, body=body)
