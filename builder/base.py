@@ -617,7 +617,6 @@ class BuildPack:
         build_kwargs.update(extra_build_kwargs)
 
         for line in client.build(**build_kwargs):
-            print(f'{line}')
             yield line
 
 

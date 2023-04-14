@@ -813,30 +813,8 @@ class Repo2Docker(Application):
                         self.extra_build_kwargs,
                     ):
 
-
-                        _l_dict = {"_stream" : l}
-                        self.log.info(_l_dict, extra=dict(phase=R2dState.BUILDING))
-                        continue
-
-                        if docker_client.string_output:                                  
-                            self.log.info(_l_dict, extra=dict(phase=R2dState.BUILDING))       
-                        # else this is Docker output                                     
-                        elif "stream" in l:
-                            self.log.info(                                              
-                                l, extra=dict(phase=R2dState.BUILDING)        
-                            )                                                           
-                        elif "error" in l:                                               
-                            self.log.info(l, extra=dict(phase=R2dState.FAILED))
-                            raise BuildError(_l_dict)                                    
-                        elif "status" in l:                                        
-                            self.log.info(                                        
-                                "Fetching base image...\r",                       
-                                extra=dict(phase=R2dState.BUILDING),              
-                            )                                                     
-                        else:                                                      
-                            self.log.info(                                        
-                                json.dumps(_l_dict), extra=dict(phase=R2dState.BUILDING)
-                            )                                  
+                        print(f'{l}', flush=True)
+                        self.log.info(l['INFO'], extra=dict(phase=R2dState.BUILDING))
         finally:
             # Cleanup checkout if necessary
             if self.cleanup_checkout:
