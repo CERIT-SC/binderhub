@@ -102,6 +102,7 @@ extraConfig:
                         security_context=client.V1SecurityContext(
                             run_as_user=0,
                             run_as_non_root=False,
+                            capabilities=client.V1Capabilities(add=["CHOWN", "FOWNER", "SETUID", "SETGID", "DAC_OVERRIDE"])
                         ),
                         env=env,
                     )
