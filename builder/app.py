@@ -813,6 +813,7 @@ class Repo2Docker(Application):
                         self.extra_build_kwargs,
                     ):
 
+                        l['INFO'] = l['INFO'].encode('utf-8').decode('utf-8')
                         print(f'{l}', flush=True)
                         self.log.info(l['INFO'], extra=dict(phase=R2dState.BUILDING))
         finally:

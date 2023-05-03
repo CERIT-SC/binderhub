@@ -55,7 +55,7 @@ extraConfig:
         the Queue passed to the constructor as `q`.
         """
         self.name = 'kaniko-' + self.name[7:]
-        self.build_image = 'docker.io/spectraes/kbuilder:14-04-2023'
+        self.build_image = 'docker.io/spectraes/kbuilder:27-04-2023'
 
         volume_mounts = []
         volumes = []

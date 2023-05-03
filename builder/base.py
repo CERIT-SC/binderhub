@@ -137,6 +137,8 @@ COPY --chown={{ user }}:{{ user }} src/{{ src }} ${REPO_DIR}/{{ dst }}
 {% endfor -%}
 {% endif -%}
 
+RUN chown -R ${NB_USER} /home
+
 {% for sd in preassemble_script_directives -%}
 {{ sd }}
 {% endfor %}
@@ -577,8 +579,6 @@ class BuildPack:
         for src in sorted(self.get_build_script_files()):
             dest_path, src_path = self.generate_build_context_filename(src)
             tar.add(src_path, dest_path, filter=_filter_tar)
-
-        import os
 
         for fname in ("repo2docker-entrypoint", "python3-login"):
             tar.add(os.path.join(HERE, fname), fname, filter=_filter_tar)
